@@ -1,2 +1,3 @@
-# war-patrol
-WAR PATROL — browser Silent Service-inspired fleet boat game
+Open index.html in a browser, or use GitHub Pages.
+
+Play: https://rusrick-byte.github.io/war-patrol/
