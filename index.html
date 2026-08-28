@@ -100,8 +100,8 @@ let phase="menu",idx=0,g=null,cv1,cv2,last=0;
 function boot(i){
  const d=M[i];idx=i;
  g={def:d,t:0,px:d.start[0],py:d.start[1],hd:d.start[2],st:"surface",plant:"diesel",
-    sb:0,fish:d.train?4:6,cd:0,fs:[],dcs:[],fuel:100,fuelWarn:0,
-    coach:d.train?"TURN THE BOAT \u2014 hold A or D.":"H points the bow at the barn. B flips diesel/battery.",
+    sb:0,fish:d.train?4:6,cd:0,fs:[],dcs:[],fuel:100,batt:100,battNext:25,fuelWarn:0,
+    coach:d.train?"TURN THE BOAT \u2014 hold A or D.":"H barn heading. B diesel/battery. Search on diesel, shoot on the cells.",
     drill:0,status:"play",mode:"hunt",sunk:0,hits:0,bhp:3,compress:d.train?1:4,dryTold:0,
     home:[d.start[0],d.start[1]],
     ships:d.ships.map((s,n)=>({...s,id:n,alive:1,wi:0,maxHp:s.hp,hunt:0}))};
@@ -133,8 +133,7 @@ function startRun(){
  if(!g||g.status!=="play"||g.mode==="run")return;
  if(g.def.train){endPatrol(g.sunk?"won":"home",g.sunk?"Hulk is on the bottom.":"Range safety called it.");return;}
  g.mode="run";spawnHunter();A.klax();
- const teeth=g.fish>0?(" "+g.fish+" fish left \u2014 you can still shoot."):" Tubes dry.";
- g.coach="H for the barn heading. B for battery if you need to sip."+teeth;
+ g.coach="H for barn heading. B if you can afford to be slow. Watch the cells.";
  setAlert(1);
 }
 function rtb(){
@@ -145,10 +144,12 @@ function rtb(){
 }
 function togglePlant(){
  if(!g||g.status!=="play")return;
- if(g.def.fuel&&g.fuel<=0){g.plant="batt";g.coach="Bunker dry. Battery only. Seven knots.";return;}
+ if(g.def.fuel&&g.fuel<=0&&g.batt<=0){g.coach="Both plants dead.";return;}
+ if(g.def.fuel&&g.fuel<=0){g.plant="batt";g.coach="Bunker dry. Battery only.";return;}
+ if(g.plant==="diesel"&&g.def.fuel&&g.batt<=0){g.coach="Cells are dead. Stay on diesel and charge.";return;}
  g.plant=g.plant==="diesel"?"batt":"diesel";
  A.click();
- g.coach=g.plant==="batt"?"On the battery. Seven knots. Quiet. He may still outrun you.":"Diesels on. Fast and hungry.";
+ g.coach=g.plant==="batt"?"On the battery. Seven knots. Quiet.":"Diesels on. Charging the cells. Fast and hungry.";
 }
 function steerHome(){
  if(!g||g.status!=="play")return;
@@ -162,6 +163,32 @@ function fire(){
  A.fire();A.fish(1);
  g.coach=g.mode==="run"?"Insurance fish is running.":(g.fish<=0?"Last fish is running.":"Fish running. "+g.fish+" left.");
 }
+function tickPlant(step){
+ if(!g.def.fuel)return;
+ if(g.plant==="diesel"){
+  g.fuel=Math.max(0,g.fuel-knots()*step*0.022);
+  g.batt=Math.min(100,g.batt+step*0.12);
+  if(g.fuel<25&&!g.fuelWarn){g.fuelWarn=1;g.coach="Quarter bunker. Think about the barn.";}
+  if(g.fuel<=0){g.plant="batt";g.coach="Bunker dry. Forced to the battery.";}
+ } else {
+  g.batt=Math.max(0,g.batt-step*0.20);
+  while(g.batt<=g.battNext && g.battNext>=0){
+   if(g.battNext===10) g.coach="BATTERY TEN. If we stay down we will not come up on our own terms.";
+   else if(g.battNext===0) g.coach="CELLS DEAD.";
+   else g.coach="Battery "+g.battNext+".";
+   g.battNext-=5;
+  }
+  if(g.batt<=0){
+   if(g.fuel>0){
+    g.plant="diesel";g.st="surface";A.klax();
+    g.coach="CELLS DEAD \u2014 blowing to the roof on diesel. He will hear that.";
+    g.battNext=25;
+   } else {
+    endPatrol("lost","Bunker dry and cells dead. A log on the sea. He will find you.");
+   }
+  }
+ }
+}
 function loop(now){
  if(phase!=="play")return;
  requestAnimationFrame(loop);
@@ -171,15 +198,12 @@ function loop(now){
  g.t+=dt;g.cd=Math.max(0,g.cd-dt);
  if(input.l)g.hd-=.65*dt;if(input.r)g.hd+=.65*dt;
  if(input.q)g.sb-=.9*dt;if(input.e)g.sb+=.9*dt;
- if(g.def.fuel&&g.fuel<=0&&g.plant!=="batt"){g.plant="batt";g.coach="Bunker dry. Forced to the battery.";}
+ tickPlant(step);
+ if(g.status!=="play")return;
  const kn=knots();
  const spd=kn*KT;
  g.px=clamp(g.px+Math.cos(g.hd)*spd*step,80,W-80);
  g.py=clamp(g.py+Math.sin(g.hd)*spd*step,80,Hgt-80);
- if(g.def.fuel&&g.plant==="diesel"){
-  g.fuel=Math.max(0,g.fuel-kn*step*0.022);
-  if(g.fuel<25&&!g.fuelWarn){g.fuelWarn=1;g.coach="Quarter bunker. Think about the barn. H sets the heading.";}
- }
  const hunter=g.ships.find(s=>s.alive&&(s.hunt||(g.mode==="run"&&s.k==="dd")));
  const hd=hunter?dist(g.px,g.py,hunter.x,hunter.y):9999;
  A.hum(g.plant==="batt"?.25:(g.st==="surface"?.9:g.st==="scope"?.45:.18));
@@ -233,7 +257,7 @@ function loop(now){
   if(hunter&&hd<420&&(!g.nextDc||g.t>g.nextDc)){
    g.nextDc=g.t+2.4;
    g.dcs.push({x:g.px+Math.cos(g.hd)*40,y:g.py+Math.sin(g.hd)*40,t:0,boom:0});
-   g.coach="DEPTH CHARGE \u2014 C deep, B battery if you can afford to be slow. "+homeCue();
+   g.coach="DEPTH CHARGE \u2014 C deep. "+homeCue();
   }
   if(dist(g.px,g.py,g.home[0],g.home[1])<220){
    endPatrol(g.sunk>0||g.hits>0?"won":"home", g.sunk?"You made the barn with kills on the board.":"You made the barn.");
@@ -265,15 +289,11 @@ function paint(){
  ctx.setLineDash([8,6]);ctx.lineWidth=g.mode==="run"?2:1;
  ctx.beginPath();ctx.moveTo(X(g.px),Y(g.py));
  if(homeOn) ctx.lineTo(X(g.home[0]),Y(g.home[1]));
- else {
-  const want=homeWant();
-  ctx.lineTo(X(g.px)+Math.cos(want)*800,Y(g.py)+Math.sin(want)*800);
- }
+ else {const want=homeWant();ctx.lineTo(X(g.px)+Math.cos(want)*800,Y(g.py)+Math.sin(want)*800);}
  ctx.stroke();ctx.setLineDash([]);
  if(homeOn){
   ctx.beginPath();ctx.arc(X(g.home[0]),Y(g.home[1]),16,0,TAU);ctx.stroke();
-  ctx.fillStyle="#8b1e14";
-  ctx.font=12*dpr+'px "Special Elite"';
+  ctx.fillStyle="#8b1e14";ctx.font=12*dpr+'px "Special Elite"';
   ctx.fillText("BARN / HOME",X(g.home[0])+18,Y(g.home[1])-4);
  }
  for(const sh of g.ships){
@@ -291,13 +311,14 @@ function paint(){
  ctx.save();ctx.translate(X(g.px),Y(g.py));ctx.rotate(g.hd+Math.PI/2);
  ctx.fillStyle="#1a140c";ctx.beginPath();ctx.moveTo(0,-12);ctx.lineTo(7,10);ctx.lineTo(0,6);ctx.lineTo(-7,10);ctx.fill();ctx.restore();
  const coach=document.getElementById("coach");if(coach)coach.textContent=g.coach;
- const fishEl=document.getElementById("fish");if(fishEl)fishEl.textContent="FISH "+g.fish;
- const hpEl=document.getElementById("hp");if(hpEl)hpEl.textContent="HULL "+g.bhp;
- const plt=document.getElementById("plt");if(plt)plt.textContent=g.plant==="batt"?"BATT 7KT":"DIESEL "+knots()+"KT";
- const cht=document.getElementById("cht");if(cht)cht.textContent=(g.mode==="run"?"RUN \u00b7 ":"CHART \u00b7 ")+g.compress+"\u00d7";
+ if(document.getElementById("fish"))document.getElementById("fish").textContent="FISH "+g.fish;
+ if(document.getElementById("hp"))document.getElementById("hp").textContent="HULL "+g.bhp;
+ if(document.getElementById("plt"))document.getElementById("plt").textContent=g.plant==="batt"?"BATT 7KT":"DIESEL "+knots()+"KT";
+ if(document.getElementById("cht"))document.getElementById("cht").textContent=(g.mode==="run"?"RUN \u00b7 ":"CHART \u00b7 ")+g.compress+"\u00d7";
  const homeR=Math.round(dist(g.px,g.py,g.home[0],g.home[1]));
- const brg=navDeg(homeWant());
- if(document.getElementById("barn"))document.getElementById("barn").textContent=brg+"\u00b0  "+homeR+" yd";
+ if(document.getElementById("barn"))document.getElementById("barn").textContent=navDeg(homeWant())+"\u00b0  "+homeR+" yd";
+ const low=document.getElementById("battlow");
+ if(low){low.style.display=(g.def.fuel&&g.batt<25)?"flex":"none";low.querySelector("b").textContent=g.batt<=0?"DEAD":"LOW "+Math.round(g.batt)+"%";}
  if(g.mode==="run"){
   if(document.getElementById("tgt"))document.getElementById("tgt").textContent="BARN";
   if(document.getElementById("rng"))document.getElementById("rng").textContent=homeR+" yd";
@@ -358,14 +379,14 @@ function drawUI(){
   root.innerHTML=`<div class="menu"><div class="menu-l">
    <div class="stamp" style="color:#c9a227;font-size:13px">PACIFIC FLEET</div>
    <div class="stamp" style="font-size:56px;line-height:.95">WAR PATROL</div>
-   <p>H \u2014 bow on the barn. B \u2014 battery (7 kt, no bunker). Higher patrols have a real tank.</p>
+   <p>Search on diesel. Shoot on the cells. The crew will call the battery when it gets thin.</p>
   </div><div class="menu-r">
    <div class="stamp" style="margin-bottom:12px">SAILING BOARD</div>
    ${M.map((p,i)=>{
      const lock=i>=unlocked;
      return `<button class="btn" ${lock?"disabled":""} data-i="${i}" style="display:block;width:100%;text-align:left;margin:0 0 8px">
       <b>${String(i).padStart(2,"0")} \u00b7 ${p.title}</b>
-      <div style="font-size:11px">${lock?"Sink the previous target first":(p.train?"Training":p.fuel?"Bunker limited":"War patrol")}</div>
+      <div style="font-size:11px">${lock?"Sink the previous target first":(p.train?"Training":p.fuel?"Bunker + cells":"War patrol")}</div>
      </button>`;
    }).join("")}
   </div></div>`;
@@ -380,7 +401,7 @@ function drawUI(){
   root.innerHTML=`<div class="overlay"><div class="card">
    <div class="stamp" style="font-size:28px;color:${dead?"#8b1e14":ok?"#3f4a2e":"#6b4a1e"}">${dead?"OVERDUE":ok?"PATROL REPORT":"RETURNED TO BASE"}</div>
    <p>${g.reason||""}</p>
-   <p class="mono">Sunk ${g.sunk} \u00b7 hits ${g.hits} \u00b7 hull ${g.bhp} \u00b7 fuel ${g.def.fuel?Math.round(g.fuel)+"%":"\u2014"}</p>
+   <p class="mono">Sunk ${g.sunk} \u00b7 hits ${g.hits} \u00b7 hull ${g.bhp} \u00b7 fuel ${g.def.fuel?Math.round(g.fuel)+"%":"\u2014"} \u00b7 cells ${g.def.fuel?Math.round(g.batt)+"%":"\u2014"}</p>
    ${dmg.length?'<p style="font-size:13px">'+dmg.join(" \u00b7 ")+'</p>':''}
    <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
     <button class="btn p" id="again">Run it again</button>
@@ -413,6 +434,7 @@ function drawUI(){
     <div class="row"><span>Target</span><b id="tgt">\u2014</b></div>
     <div class="row"><span>Range</span><b class="mono" id="rng">\u2014</b></div>
     <div class="row"><span>Cue</span><b class="mono" id="asp">\u2014</b></div>
+    <div class="row" id="battlow" style="display:none;color:#8b1e14"><span>Cells</span><b>LOW</b></div>
     <div id="fuelbar" class="bar" style="display:none"><i style="width:100%"></i></div>
    </div>
   </div>
