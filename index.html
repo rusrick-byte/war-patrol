@@ -54,6 +54,13 @@ const TAU=Math.PI*2,KT=1.7,W=8000,Hgt=5000;
 function dist(ax,ay,bx,by){return Math.hypot(bx-ax,by-ay)}
 function ad(a,b){let d=a-b;while(d>Math.PI)d-=TAU;while(d<-Math.PI)d+=TAU;return d}
 function clamp(n,a,b){return Math.max(a,Math.min(b,n))}
+function homeCue(){
+ const want=Math.atan2(g.home[1]-g.py,g.home[0]-g.px);
+ const a=ad(want,g.hd);
+ if(Math.abs(a)<.22) return "HOME DEAD AHEAD \u2014 hold this heading";
+ if(a>0) return a>1.15?"HOME ASTERN TO STARBOARD \u2014 come right (D)":"HOME OFF STARBOARD BOW \u2014 D";
+ return a<-1.15?"HOME ASTERN TO PORT \u2014 come left (A)":"HOME OFF PORT BOW \u2014 A";
+}
 const LS="wp_unlock_v2";
 let unlocked=1;
 try{unlocked=Math.max(1,JSON.parse(localStorage.getItem(LS)||"1"))}catch(e){}
@@ -84,8 +91,8 @@ let phase="menu",idx=0,g=null,cv1,cv2,last=0;
 function boot(i){
  const d=M[i];idx=i;
  g={def:d,t:0,px:d.start[0],py:d.start[1],hd:d.start[2],st:"surface",
-    sb:0,fish:d.train?4:6,cd:0,fs:[],dcs:[],coach:d.train?"TURN THE BOAT \u2014 hold A or D.":"Find smoke. R / RTB runs for home. C dives.",
-    drill:0,status:"play",mode:"hunt",sunk:0,hits:0,bhp:3,compress:d.train?1:4,dryTold:0,klaxed:0,
+    sb:0,fish:d.train?4:6,cd:0,fs:[],dcs:[],coach:d.train?"TURN THE BOAT \u2014 hold A or D.":"Barn mark is already on the chart. R / RTB runs for it. Keep a fish if you want teeth.",
+    drill:0,status:"play",mode:"hunt",sunk:0,hits:0,bhp:3,compress:d.train?1:4,dryTold:0,
     home:[d.start[0],d.start[1]],
     ships:d.ships.map((s,n)=>({...s,id:n,alive:1,wi:0,maxHp:s.hp,hunt:0}))};
  A.unlock();A.fish(0);phase="play";drawUI();last=performance.now();loop(last);
@@ -115,8 +122,9 @@ function spawnHunter(){
 function startRun(){
  if(!g||g.status!=="play"||g.mode==="run")return;
  if(g.def.train){endPatrol(g.sunk?"won":"home",g.sunk?"Hulk is on the bottom.":"Range safety called it.");return;}
- g.mode="run";spawnHunter();A.klax();g.klaxed=1;
- g.coach="EMPTY TUBES. Make for HOME on the chart. C to hide. You cannot shoot.";
+ g.mode="run";spawnHunter();A.klax();
+ const teeth=g.fish>0?(" You kept "+g.fish+" fish \u2014 put the wire on the can and ENTER."):" Tubes dry. Hide.";
+ g.coach=homeCue()+". Red barn mark on the chart."+teeth;
  setAlert(1);
 }
 function rtb(){
@@ -126,11 +134,11 @@ function rtb(){
  else startRun();
 }
 function fire(){
- if(!g||g.status!=="play"||g.mode==="run"||g.cd>0||g.fish<=0||g.st==="deep")return;
+ if(!g||g.status!=="play"||g.cd>0||g.fish<=0||g.st==="deep")return;
  const course=g.hd+g.sb;g.fish--;g.cd=7;
  g.fs.push({x:g.px+Math.cos(course)*30,y:g.py+Math.sin(course)*30,h:course,life:28,tr:[]});
  A.fire();A.fish(1);
- g.coach=g.fish<=0?"Last fish is running.":(g.def.train?"WATCH THE WAKE.":"Fish running. "+g.fish+" left.");
+ g.coach=g.mode==="run"?"Insurance fish is running.":(g.fish<=0?"Last fish is running.":(g.def.train?"WATCH THE WAKE.":"Fish running. "+g.fish+" left."));
 }
 function loop(now){
  if(phase!=="play")return;
@@ -170,7 +178,7 @@ function loop(now){
    if(!s.alive)continue;
    if(dist(f.x,f.y,s.x,s.y)<Math.max(26,s.len*.26)){
     f.life=0;s.hp--;g.hits++;A.boom();
-    if(s.hp<=0){s.alive=0;g.sunk++;g.coach=s.n+" is breaking up.";}
+    if(s.hp<=0){s.alive=0;g.sunk++;g.coach=s.k==="dd"?"Can is breaking up. Steer for the barn mark.":s.n+" is breaking up.";}
     else g.coach="Hit on "+s.n+". Still making turns.";
    }
   }
@@ -190,15 +198,15 @@ function loop(now){
  if(g.mode!=="run" && (g.def.train?g.sunk>=1:preyLeft()===0)){
   endPatrol("won",g.def.train?"Hulk is on the bottom. You are a skipper now.":"Targets down. Make for the barn.");
  } else if(g.mode!=="run" && g.fish<=0 && g.fs.length===0 && !g.dryTold){
-  g.dryTold=1;
-  g.coach="Bow room empty. R or RTB \u2014 then you run for home.";
+  g.dryTold=1;g.coach="Bow room empty. R or RTB \u2014 follow the red line to the barn.";
  }
  if(g.mode==="run"){
   setAlert(1);
+  if(g.t%2<dt*g.compress+0.05) g.coach=homeCue()+(g.fish?" \u00b7 "+g.fish+" fish left.":"");
   if(hunter&&hd<420&&(!g.nextDc||g.t>g.nextDc)){
    g.nextDc=g.t+2.4;
    g.dcs.push({x:g.px+Math.cos(g.hd)*40,y:g.py+Math.sin(g.hd)*40,t:0,boom:0});
-   g.coach="DEPTH CHARGE IN THE WATER \u2014 C to go deep, keep turning.";
+   g.coach="DEPTH CHARGE IN THE WATER \u2014 C to go deep. "+homeCue();
   }
   if(dist(g.px,g.py,g.home[0],g.home[1])<220){
    endPatrol(g.sunk>0||g.hits>0?"won":"home", g.sunk?"You made the barn with kills on the board.":"You made the barn. Empty book, whole boat.");
@@ -225,10 +233,15 @@ function paint(){
  ctx.fillStyle=g.def.night?"#0d1820":"#b7c4b0";ctx.fillRect(0,0,w,h);
  ctx.fillStyle=g.def.night?"#1a2a22":"#8a9a6e";
  ctx.beginPath();g.def.land[0].forEach((p,i)=>i?ctx.lineTo(X(p[0]),Y(p[1])):ctx.moveTo(X(p[0]),Y(p[1])));ctx.closePath();ctx.fill();
- if(g.mode==="run"){
-  ctx.strokeStyle="#8b1e14";ctx.setLineDash([6,4]);ctx.beginPath();ctx.arc(X(g.home[0]),Y(g.home[1]),18,0,TAU);ctx.stroke();ctx.setLineDash([]);
-  ctx.fillStyle="#8b1e14";ctx.font=11*dpr+'px "Special Elite"';ctx.fillText("HOME",X(g.home[0])+12,Y(g.home[1]));
- }
+ ctx.strokeStyle=g.mode==="run"?"#8b1e14":"rgba(139,30,20,.45)";
+ ctx.setLineDash([8,6]);ctx.lineWidth=g.mode==="run"?2:1;
+ ctx.beginPath();ctx.moveTo(X(g.px),Y(g.py));ctx.lineTo(X(g.home[0]),Y(g.home[1]));ctx.stroke();ctx.setLineDash([]);
+ ctx.beginPath();ctx.arc(X(g.home[0]),Y(g.home[1]),16,0,TAU);ctx.stroke();
+ ctx.fillStyle="#8b1e14";
+ ctx.font=12*dpr+'px "Special Elite"';
+ ctx.fillText("BARN / HOME",X(g.home[0])+18,Y(g.home[1])-4);
+ ctx.font=10*dpr+"px monospace";
+ ctx.fillText(Math.round(dist(g.px,g.py,g.home[0],g.home[1]))+" yd",X(g.home[0])+18,Y(g.home[1])+12);
  for(const sh of g.ships){
   if(!sh.alive){ctx.fillStyle="rgba(40,40,40,.5)";ctx.beginPath();ctx.arc(X(sh.x),Y(sh.y),5,0,TAU);ctx.fill();continue;}
   ctx.save();ctx.translate(X(sh.x),Y(sh.y));ctx.rotate(sh.h);
@@ -247,10 +260,17 @@ function paint(){
  const fishEl=document.getElementById("fish");if(fishEl)fishEl.textContent="FISH "+g.fish;
  const hpEl=document.getElementById("hp");if(hpEl)hpEl.textContent="HULL "+g.bhp;
  const cht=document.getElementById("cht");if(cht)cht.textContent=(g.mode==="run"?"RUN \u00b7 ":"CHART \u00b7 ")+g.compress+"\u00d7";
- const marked=g.ships.find(sh=>sh.alive&&Math.abs(ad(Math.atan2(sh.y-g.py,sh.x-g.px),g.hd+g.sb))<.16);
- if(document.getElementById("tgt"))document.getElementById("tgt").textContent=marked?marked.n:"\u2014";
- if(document.getElementById("rng"))document.getElementById("rng").textContent=marked?Math.round(dist(g.px,g.py,marked.x,marked.y))+" yd":"\u2014";
- if(document.getElementById("asp"))document.getElementById("asp").textContent=marked?aspectWords(g,marked):"\u2014";
+ const homeR=Math.round(dist(g.px,g.py,g.home[0],g.home[1]));
+ if(g.mode==="run"){
+  if(document.getElementById("tgt"))document.getElementById("tgt").textContent="BARN";
+  if(document.getElementById("rng"))document.getElementById("rng").textContent=homeR+" yd";
+  if(document.getElementById("asp"))document.getElementById("asp").textContent=homeCue().split(" \u2014 ")[0];
+ } else {
+  const marked=g.ships.find(sh=>sh.alive&&Math.abs(ad(Math.atan2(sh.y-g.py,sh.x-g.px),g.hd+g.sb))<.16);
+  if(document.getElementById("tgt"))document.getElementById("tgt").textContent=marked?marked.n:"\u2014";
+  if(document.getElementById("rng"))document.getElementById("rng").textContent=marked?Math.round(dist(g.px,g.py,marked.x,marked.y))+" yd":"\u2014";
+  if(document.getElementById("asp"))document.getElementById("asp").textContent=marked?aspectWords(g,marked):"\u2014";
+ }
  const sx=prep(s),sw=s.width,shH=s.height,cx=sw/2,cy=shH*.58,R=Math.min(sw,shH)*.46;
  sx.fillStyle="#0a0c0b";sx.fillRect(0,0,sw,shH);
  sx.save();sx.beginPath();sx.arc(cx,cy,R,0,TAU);sx.clip();
@@ -295,7 +315,7 @@ function drawUI(){
   root.innerHTML=`<div class="menu"><div class="menu-l">
    <div class="stamp" style="color:#c9a227;font-size:13px">PACIFIC FLEET</div>
    <div class="stamp" style="font-size:56px;line-height:.95">WAR PATROL</div>
-   <p>Empty tubes means a run for home. A can may come out of left field. Dive and hide. You cannot shoot.</p>
+   <p>The red barn mark is home. Follow the dashed line. Keep a fish for the can if you want teeth on the run.</p>
   </div><div class="menu-r">
    <div class="stamp" style="margin-bottom:12px">SAILING BOARD</div>
    ${M.map((p,i)=>{
@@ -317,7 +337,7 @@ function drawUI(){
   root.innerHTML=`<div class="overlay"><div class="card">
    <div class="stamp" style="font-size:28px;color:${dead?"#8b1e14":ok?"#3f4a2e":"#6b4a1e"}">${dead?"OVERDUE":ok?"PATROL REPORT":"RETURNED TO BASE"}</div>
    <p>${g.reason||""}</p>
-   <p class="mono">Sunk ${g.sunk} \u00b7 hits ${g.hits} \u00b7 hull ${g.bhp}</p>
+   <p class="mono">Sunk ${g.sunk} \u00b7 hits ${g.hits} \u00b7 hull ${g.bhp} \u00b7 fish left ${g.fish}</p>
    ${dmg.length?'<p style="font-size:13px">'+dmg.join(" \u00b7 ")+'</p>':''}
    <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
     <button class="btn p" id="again">Run it again</button>
@@ -337,7 +357,7 @@ function drawUI(){
    <button class="btn" id="rtb">RTB</button>
    <button class="btn" id="mu">${A.muted()?"SND OFF":"SND ON"}</button>
   </div>
-  <div class="banner stamp" id="banner">DESTROYER HUNTING \u2014 RUN FOR HOME</div>
+  <div class="banner stamp" id="banner">DESTROYER HUNTING \u2014 FOLLOW THE RED LINE HOME</div>
   <div class="screen">
    <div class="panel"><h2>NAVIGATIONAL CHART</h2><canvas id="c1"></canvas></div>
    <div class="panel"><h2>${g.def.night?"NIGHT GLASS":"PERISCOPE"}</h2><canvas id="c2"></canvas></div>
@@ -347,7 +367,7 @@ function drawUI(){
    <div class="board">
     <div class="row"><span>Target</span><b id="tgt">\u2014</b></div>
     <div class="row"><span>Range</span><b class="mono" id="rng">\u2014</b></div>
-    <div class="row"><span>Aspect</span><b class="mono" id="asp">\u2014</b></div>
+    <div class="row"><span>Cue</span><b class="mono" id="asp">\u2014</b></div>
    </div>
   </div>
  </div>`;
@@ -361,10 +381,10 @@ window.onkeydown=e=>{
  if(phase!=="play"||!g)return;
  if(k==="a"||k==="arrowleft")input.l=1;
  if(k==="d"||k==="arrowright")input.r=1;
- if(k==="c"){g.st="deep";A.dive();if(g.mode==="run")g.coach="Deep. Slow. Let him pass over.";}
- if(k==="f"){g.st="scope";A.dive();}
- if(k==="v")g.st="surface";
  if(k==="q")input.q=1;if(k==="e")input.e=1;
+ if(k==="f"){g.st="scope";A.dive();}
+ if(k==="c"){g.st="deep";A.dive();if(g.mode==="run")g.coach="Deep. Slow. "+homeCue();}
+ if(k==="v")g.st="surface";
  if(k==="z")g.compress=g.compress===64?16:g.compress===16?4:1;
  if(k==="x")g.compress=g.compress===1?4:g.compress===4?16:64;
  if(k==="enter"){fire();e.preventDefault()}
