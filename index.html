@@ -56,7 +56,7 @@ function loop(now){
  if(phase!=="play")return;
  requestAnimationFrame(loop);
  const dt=Math.min(.05,(now-last)/1000);last=now;
- if(g.status!=="play")return;
+ if(!g||g.status!=="play")return;
  g.t+=dt;g.cd=Math.max(0,g.cd-dt);
  if(input.l)g.hd-=.7*dt;if(input.r)g.hd+=.7*dt;
  if(input.q)g.sb-=.9*dt;if(input.e)g.sb+=.9*dt;
@@ -69,11 +69,14 @@ function loop(now){
  if(Math.abs(ad(tgt,g.hd+g.sb))<.18&&dist(g.px,g.py,g.hx,g.hy)<5000&&g.drill<3&&g.alive){g.drill=3;g.coach="ON THE WIRE. ENTER fires one fish.";}
  for(const f of g.fs){
   f.life-=dt;f.x+=Math.cos(f.h)*42*KT*dt;f.y+=Math.sin(f.h)*42*KT*dt;f.tr.push([f.x,f.y]);if(f.tr.length>18)f.tr.shift();
-  if(g.alive&&dist(f.x,f.y,g.hx,g.hy)<40){f.life=0;g.alive=0;A.boom();g.status="won";g.coach="Hulk is on the bottom. That is the whole game.";A.win();setTimeout(()=>phase="win",800);}
+  if(g.alive&&dist(f.x,f.y,g.hx,g.hy)<40){
+    f.life=0;g.alive=0;A.boom();A.win();
+    g.coach="Hulk is on the bottom. Range safety is on the horn.";
+    setTimeout(function(){ phase="win"; A.hum(0); drawUI(); }, 900);
+  }
  }
  g.fs=g.fs.filter(f=>f.life>0);
  paint();
- if(g.status==="won"&&phase==="win")drawUI();
 }
 function paint(){
  const c=cv1,s=cv2;if(!c||!s)return;
@@ -85,12 +88,13 @@ function paint(){
  ctx.fillStyle="#b7c4b0";ctx.fillRect(0,0,w,h);
  ctx.fillStyle="#8a9a6e";ctx.beginPath();land[0].p.forEach((p,i)=>i?ctx.lineTo(X(p[0]),Y(p[1])):ctx.moveTo(X(p[0]),Y(p[1])));ctx.closePath();ctx.fill();
  if(g.alive){ctx.fillStyle="#243044";ctx.fillRect(X(g.hx)-8,Y(g.hy)-3,16,6)}
+ else {ctx.fillStyle="rgba(40,40,40,.55)";ctx.beginPath();ctx.arc(X(g.hx),Y(g.hy),7,0,TAU);ctx.fill()}
  ctx.strokeStyle="#c45a2a";ctx.lineWidth=2;
  for(const f of g.fs){if(f.tr.length<2)continue;ctx.beginPath();f.tr.forEach((p,i)=>i?ctx.lineTo(X(p[0]),Y(p[1])):ctx.moveTo(X(p[0]),Y(p[1])));ctx.stroke()}
  ctx.save();ctx.translate(X(g.px),Y(g.py));ctx.rotate(g.hd+Math.PI/2);
  ctx.fillStyle="#1a140c";ctx.beginPath();ctx.moveTo(0,-12);ctx.lineTo(7,10);ctx.lineTo(0,6);ctx.lineTo(-7,10);ctx.fill();ctx.restore();
- document.getElementById("coach").textContent=g.coach;
- document.getElementById("fish").textContent="FISH "+g.fish;
+ const coach=document.getElementById("coach"); if(coach) coach.textContent=g.coach;
+ const fishEl=document.getElementById("fish"); if(fishEl) fishEl.textContent="FISH "+g.fish;
  const sx=prep(s),sw=s.width,sh=s.height,cx=sw/2,cy=sh*.58,R=Math.min(sw,sh)*.46;
  sx.fillStyle="#0a0c0b";sx.fillRect(0,0,sw,sh);
  sx.save();sx.beginPath();sx.arc(cx,cy,R,0,TAU);sx.clip();
@@ -118,6 +122,7 @@ function drawUI(){
  if(phase==="win"){
   root.innerHTML=`<div class="overlay"><div class="card"><div class="stamp" style="font-size:28px">PATROL REPORT</div>
   <p>Hulk is on the bottom. You are a skipper now.</p>
+  <p class="mono">1 ship · training fish expended</p>
   <button class="btn p" id="again">Run it again</button></div></div>`;
   document.getElementById("again").onclick=()=>{phase="menu";drawUI()};
   return;
